@@ -1,0 +1,60 @@
+import gradio as gr
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
+
+# ✅ Use public Hugging Face model (no token required)
+model_name = "google/flan-t5-large"
+print("Loading model...")
+
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+
+# Create NLP pipeline
+nlp = pipeline("text2text-generation", model=model, tokenizer=tokenizer)
+
+# Function to extract drug info using the model
+def extract_drug_info(text):
+    prompt = f"Extract structured drug information (drug name, dosage, frequency) from this text:\n\n{text}"
+    result = nlp(prompt, max_length=150)[0]['generated_text']
+    return result.strip()
+
+# Simple hardcoded drug interaction checker
+def check_interaction(drugs):
+    interactions = {
+        ("aspirin", "warfarin"): "⚠️ High risk of bleeding",
+        ("ibuprofen", "lisinopril"): "⚠️ May reduce antihypertensive effect"
+    }
+    results = []
+    for i in range(len(drugs)):
+        for j in range(i + 1, len(drugs)):
+            pair = tuple(sorted([drugs[i].lower(), drugs[j].lower()]))
+            if pair in interactions:
+                results.append(f"{drugs[i]} + {drugs[j]} → {interactions[pair]}")
+    return results or ["✅ No known interactions."]
+
+# Main logic for analyzing a prescription
+def analyze_prescription(prescription_text, age):
+    structured_info = extract_drug_info(prescription_text)
+
+    # Simple known drug list to match with input
+    known_drugs = ["aspirin", "warfarin", "ibuprofen", "lisinopril"]
+    extracted_drugs = [drug for drug in known_drugs if drug in prescription_text.lower()]
+    
+    interaction_results = check_interaction(extracted_drugs)
+    dosage_note = f"For patient age {age}, standard dosage should be reviewed as per clinical guidelines."
+
+    return f"""📋 **Extracted Drug Info**:\n{structured_info}\n
+⚠️ **Drug Interactions**:\n{chr(10).join(interaction_results)}\n
+💊 **Dosage Recommendation**:\n{dosage_note}
+"""
+
+# Gradio Interface
+gr.Interface(
+    fn=analyze_prescription,
+    inputs=[
+        gr.Textbox(lines=5, label="Enter Prescription Text"),
+        gr.Number(label="Patient Age")
+    ],
+    outputs="text",
+    title="💊 Drug Interaction & Dosage Advisor",
+    description="Analyzes drug prescriptions for interactions, dosage advice, and more."
+).launch(share=True)
